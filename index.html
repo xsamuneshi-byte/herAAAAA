@@ -2,34 +2,30 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>3D Horror FPS - Space to Start</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js 3D Action Proto</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Courier New', Courier, monospace; }
-        #crosshair {
-            position: absolute; top: 50%; left: 50%; width: 20px; height: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.5); border-radius: 50%;
-            transform: translate(-50%, -50%); pointer-events: none;
-        }
-        #ui {
-            position: absolute; bottom: 20px; left: 20px; color: #ff0000;
-            font-size: 24px; text-shadow: 2px 2px #000;
-        }
+        body { margin: 0; overflow: hidden; background-color: #000; }
         #instructions {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: white; text-align: center; background: rgba(0,0,0,0.8);
-            padding: 20px; border: 1px solid #ff0000; cursor: pointer;
-            z-index: 10;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+            background: rgba(0,0,0,0.5);
+            padding: 20px;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
 
-    <div id="ui">ZOMBIES ELIMINATED: <span id="score">0</span></div>
-    <div id="crosshair"></div>
     <div id="instructions">
-        <h1>APARTMENT ESCAPE</h1>
-        <p>【スペースキー】またはクリックで開始</p>
-        <p>(W,A,S,D: 移動 | マウス: 視点 | クリック: 射撃)</p>
+        <h1>ゲーム開始</h1>
+        <p>画面をクリックして操作開始</p>
+        <p>(W,A,S,D で移動 / マウスで視点変更 / ESCで解除)</p>
     </div>
 
     <script type="importmap">
@@ -45,155 +41,126 @@
         import * as THREE from 'three';
         import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-        let scene, camera, renderer, controls;
-        let bullets = [], zombies = [], walls = [];
-        let score = 0;
-        const clock = new THREE.Clock();
+        // --- 基本設定 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // 空の色
+        scene.fog = new THREE.Fog(0x87ceeb, 0, 750); // 遠くを霞ませる
 
-        const map = [
-            [1,1,1,1,1,1,1,1,1,1],
-            [1,2,0,0,1,0,0,0,0,1],
-            [1,1,1,0,1,0,1,1,0,1],
-            [1,0,0,0,0,0,1,0,0,1],
-            [1,0,1,1,1,1,1,0,1,1],
-            [1,0,0,0,0,0,0,0,0,1],
-            [1,1,1,1,0,1,1,1,0,1],
-            [1,0,0,0,0,1,0,0,0,1],
-            [1,1,1,1,1,1,1,1,1,1],
-        ];
-        const UNIT_SIZE = 5;
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        document.body.appendChild(renderer.domElement);
 
-        init();
-        animate();
+        // --- ライト (照明) ---
+        const light = new THREE.HemisphereLight(0xeeeeff, 0x777788, 2.5);
+        light.position.set(0.5, 1, 0.75);
+        scene.add(light);
 
-        function init() {
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x020202);
-            scene.fog = new THREE.FogExp2(0x020202, 0.15);
+        // --- 地面 ---
+        const floorGeometry = new THREE.PlaneGeometry(2000, 2000, 100, 100);
+        floorGeometry.rotateX(-Math.PI / 2); // 平面を水平にする
+        const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x555555 });
+        const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+        scene.add(floor);
 
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // --- プレイヤー (立方体) ---
+        // 実際にはカメラがプレイヤーの視点になりますが、自分が見えるように立方体を置きます
+        const playerGeometry = new THREE.BoxGeometry(1, 2, 1);
+        const playerMaterial = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.position.y = 1; // 地面に埋まらないように上げる
+        scene.add(player);
 
-            const flashlight = new THREE.SpotLight(0xffffff, 50, 20, Math.PI * 0.1, 0.5, 1);
-            camera.add(flashlight);
-            flashlight.target = new THREE.Object3D();
-            camera.add(flashlight.target);
-            flashlight.target.position.set(0, 0, -1);
-            scene.add(camera);
+        // --- 操作系 (PointerLockControls) ---
+        // マウスで視点を動かすための公式ライブラリ
+        const controls = new PointerLockControls(camera, document.body);
+        const instructions = document.getElementById('instructions');
 
-            scene.add(new THREE.AmbientLight(0x404040, 0.2));
+        instructions.addEventListener('click', () => {
+            controls.lock(); // 画面をクリックしたらマウスを固定
+        });
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.body.appendChild(renderer.domElement);
+        controls.addEventListener('lock', () => {
+            instructions.style.display = 'none';
+        });
 
-            controls = new PointerLockControls(camera, document.body);
-            const instructions = document.getElementById('instructions');
-            
-            // クリックでの開始も維持
-            instructions.addEventListener('click', () => controls.lock());
-            
-            controls.addEventListener('lock', () => instructions.style.display = 'none');
-            controls.addEventListener('unlock', () => instructions.style.display = 'block');
+        controls.addEventListener('unlock', () => {
+            instructions.style.display = 'block';
+        });
 
-            // マップ生成
-            const wallGeo = new THREE.BoxGeometry(UNIT_SIZE, UNIT_SIZE, UNIT_SIZE);
-            const wallMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
-            const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x111111 }));
-            floor.rotation.x = -Math.PI / 2;
-            scene.add(floor);
+        // --- 移動のロジック ---
+        let moveForward = false;
+        let moveBackward = false;
+        let moveLeft = false;
+        let moveRight = false;
+        const velocity = new THREE.Vector3(); // 現在の速度
+        const direction = new THREE.Vector3(); // 移動する方向
 
-            for(let z=0; z<map.length; z++){
-                for(let x=0; x<map[z].length; x++){
-                    if(map[z][x] === 1) {
-                        const wall = new THREE.Mesh(wallGeo, wallMat);
-                        wall.position.set(x * UNIT_SIZE, UNIT_SIZE/2, z * UNIT_SIZE);
-                        scene.add(wall);
-                        walls.push(wall);
-                    } else if(map[z][x] === 2) {
-                        camera.position.set(x * UNIT_SIZE, 1.6, z * UNIT_SIZE);
-                    }
-                }
+        const onKeyDown = (event) => {
+            switch (event.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyD': moveRight = true; break;
+            }
+        };
+
+        const onKeyUp = (event) => {
+            switch (event.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyD': moveRight = false; break;
+            }
+        };
+
+        document.addEventListener('keydown', onKeyDown);
+        document.addEventListener('keyup', onKeyUp);
+
+        // --- アニメーションループ ---
+        let prevTime = performance.now();
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls.isLocked) {
+                const time = performance.now();
+                const delta = (time - prevTime) / 1000; // 前のフレームからの経過時間
+
+                // 減速（摩擦のようなもの）
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                // 入力に基づいて方向を決定
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize(); // 斜め移動が速くならないように調整
+
+                // 加速
+                if (moveForward || moveBackward) velocity.z -= direction.z * 400.0 * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * 400.0 * delta;
+
+                // 実際の移動を適用
+                controls.moveRight(-velocity.x * delta);
+                controls.moveForward(-velocity.z * delta);
+
+                // プレイヤー(立方体)の位置をカメラに合わせる（TPS風にする場合は距離を置く）
+                player.position.copy(camera.position);
+                player.position.y -= 1; // カメラより少し下に配置
             }
 
-            setInterval(spawnZombie, 3000);
-            window.addEventListener('click', shoot);
-            window.addEventListener('resize', onWindowResize);
+            prevTime = performance.now();
+            renderer.render(scene, camera);
         }
 
-        function spawnZombie() {
-            if (!controls.isLocked) return;
-            const zombie = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.8), new THREE.MeshStandardMaterial({ color: 0x336633 }));
-            zombie.position.set(Math.random() * 40, 0.9, Math.random() * 40);
-            scene.add(zombie);
-            zombies.push(zombie);
-        }
-
-        function shoot() {
-            if (!controls.isLocked) return;
-            const bullet = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
-            bullet.position.copy(camera.position);
-            const direction = new THREE.Vector3();
-            camera.getWorldDirection(direction);
-            bullet.velocity = direction.multiplyScalar(0.5);
-            scene.add(bullet);
-            bullets.push(bullet);
-            setTimeout(() => { scene.remove(bullet); bullets = bullets.filter(b => b !== bullet); }, 2000);
-        }
-
-        function onWindowResize() {
+        // 画面リサイズ対応
+        window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        const moveData = { forward: false, backward: false, left: false, right: false };
-        document.addEventListener('keydown', (e) => {
-            // スペースキーで開始する処理を追加
-            if (e.code === 'Space' && !controls.isLocked) {
-                controls.lock();
-            }
-            if(e.code === 'KeyW') moveData.forward = true;
-            if(e.code === 'KeyS') moveData.backward = true;
-            if(e.code === 'KeyA') moveData.left = true;
-            if(e.code === 'KeyD') moveData.right = true;
-        });
-        document.addEventListener('keyup', (e) => {
-            if(e.code === 'KeyW') moveData.forward = false;
-            if(e.code === 'KeyS') moveData.backward = false;
-            if(e.code === 'KeyA') moveData.left = false;
-            if(e.code === 'KeyD') moveData.right = false;
         });
 
-        function animate() {
-            requestAnimationFrame(animate);
-            const delta = clock.getDelta();
-            if (controls.isLocked) {
-                const speed = 5 * delta;
-                if(moveData.forward) controls.moveForward(speed);
-                if(moveData.backward) controls.moveForward(-speed);
-                if(moveData.left) controls.moveRight(-speed);
-                if(moveData.right) controls.moveRight(speed);
-
-                bullets.forEach((b, bIdx) => {
-                    b.position.add(b.velocity);
-                    zombies.forEach((z, zIdx) => {
-                        if(b.position.distanceTo(z.position) < 1) {
-                            scene.remove(z); zombies.splice(zIdx, 1);
-                            scene.remove(b); bullets.splice(bIdx, 1);
-                            score++; document.getElementById('score').innerText = score;
-                        }
-                    });
-                });
-
-                zombies.forEach(z => {
-                    const dir = new THREE.Vector3().subVectors(camera.position, z.position).normalize();
-                    z.position.x += dir.x * 0.02;
-                    z.position.z += dir.z * 0.02;
-                    z.lookAt(camera.position.x, 0.9, camera.position.z);
-                });
-            }
-            renderer.render(scene, camera);
-        }
+        animate();
     </script>
 </body>
 </html>
